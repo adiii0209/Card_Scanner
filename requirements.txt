@@ -1,0 +1,9 @@
+fastapi
+uvicorn
+pillow
+pytesseract
+python-multipart
+jinja2
+requests
+aiofiles
+python-dotenv

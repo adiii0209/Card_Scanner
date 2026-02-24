@@ -1,0 +1,427 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Dashboard — CardVault</title>
+    <meta name="description" content="View and manage your digitized business cards.">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+
+<body>
+
+    <!-- Navbar -->
+    <nav class="nav">
+        <a href="/" class="nav-brand">
+            <div class="nav-logo">⚡</div>
+            <div class="nav-title">Card<span>Vault</span></div>
+        </a>
+        <div class="nav-links">
+            <a href="/" class="nav-link">📷 Scan</a>
+            <a href="/dashboard" class="nav-link active">📋 Cards</a>
+        </div>
+    </nav>
+
+    <div class="page-wide">
+
+        <!-- Header -->
+        <div class="dash-head">
+            <div>
+                <h1>Your Cards</h1>
+                <p>All digitized cards in one place</p>
+            </div>
+            <a href="/" class="btn btn-primary" style="width:auto;padding:10px 18px;font-size:13px;">📷 Scan New</a>
+        </div>
+
+        <!-- Stats -->
+        <div class="stats">
+            <div class="stat">
+                <div class="stat-val" id="totalCards">{{ stats.total_cards }}</div>
+                <div class="stat-lbl">Total</div>
+            </div>
+            <div class="stat">
+                <div class="stat-val" id="weekCards">—</div>
+                <div class="stat-lbl">This Week</div>
+            </div>
+            <div class="stat">
+                <div class="stat-val" id="compCount">—</div>
+                <div class="stat-lbl">Companies</div>
+            </div>
+        </div>
+
+        <!-- Search -->
+        <div class="search">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="searchInput" placeholder="Search name, company, email...">
+        </div>
+
+        <!-- Cards Grid -->
+        <div class="grid" id="grid">
+            {% if cards | length == 0 %}
+            <div class="empty">
+                <div class="empty-icon">📇</div>
+                <h3>No cards yet</h3>
+                <p>Scan your first business card to get started</p>
+                <a href="/" class="btn btn-primary" style="width:auto;">📷 Scan First Card</a>
+            </div>
+            {% else %}
+            {% for card in cards %}
+            <div class="grid-card" data-id="{{ card.id }}" onclick="openModal({{ card.id }})">
+                <div class="card-header">
+                    <div class="avatar">{% if card.person_name %}{{ card.person_name[0] | upper }}{% else %}?{% endif %}
+                    </div>
+                    <div class="info">
+                        <h3>{{ card.person_name if card.person_name else 'Unknown' }}</h3>
+                        <p>{% if card.designation %}{{ card.designation }}{% endif %}{% if card.designation and
+                            card.company_name %} • {% endif %}{% if card.company_name %}{{ card.company_name }}{% endif
+                            %}</p>
+                    </div>
+                </div>
+                <div class="grid-body">
+                    {% if card.phone_numbers and card.phone_numbers | length > 0 %}
+                    <div class="grid-row">
+                        <span class="ico">📞</span>
+                        <span class="val">{% if card.phone_numbers is string %}{{ card.phone_numbers }}{% else %}{{
+                            card.phone_numbers | join(', ') }}{% endif %}</span>
+                    </div>
+                    {% endif %}
+                    {% if card.email %}
+                    <div class="grid-row">
+                        <span class="ico">📧</span>
+                        <span class="val">{{ card.email }}</span>
+                    </div>
+                    {% endif %}
+                    {% if card.office_address %}
+                    <div class="grid-row">
+                        <span class="ico">📍</span>
+                        <span class="val">{{ card.office_address[:40] }}{% if card.office_address | length > 40 %}...{%
+                            endif %}</span>
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="grid-foot">
+                    <span class="grid-date">{% if card.created_at %}{{ card.created_at[:10] }}{% endif %}</span>
+                    <div class="grid-btns">
+                        <button class="btn btn-sm btn-secondary"
+                            onclick="event.stopPropagation(); openModal({{ card.id }})">👁️</button>
+                        <button class="btn btn-sm btn-whatsapp" style="flex:none;padding:6px 10px;font-size:12px;"
+                            onclick="event.stopPropagation(); quickWhatsApp({{ card.id }})">💬</button>
+                        <button class="btn btn-sm btn-danger"
+                            onclick="event.stopPropagation(); delCard({{ card.id }})">🗑️</button>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Modal -->
+    <div class="modal-bg" id="modalBg">
+        <div class="modal">
+            <div class="card-header">
+                <div class="avatar" id="mAvatar" style="width:34px;height:34px;font-size:15px;">?</div>
+                <div class="info">
+                    <h3 id="mTitle" style="font-size:15px;">Details</h3>
+                    <p id="mSub" style="font-size:11px;">—</p>
+                </div>
+                <button class="modal-close" onclick="closeModal()">✕</button>
+            </div>
+
+            <div class="card-img" id="mImg" style="display:none;">
+                <img id="mImgEl" src="" alt="Card">
+            </div>
+
+            <div class="fields" id="mFields"></div>
+
+            <div class="modal-foot">
+                <button class="btn btn-save" style="font-size:13px;" onclick="saveEdited()">💾 Save</button>
+                <button class="btn btn-whatsapp" style="font-size:13px;" onclick="modalWhatsApp()">💬 WhatsApp</button>
+                <button class="btn btn-secondary" style="font-size:13px;" onclick="closeModal()">Close</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        var currentId = null;
+        var allCards = {{ cards | tojson }};
+
+        // ─── Stats ───
+        (function () {
+            var now = new Date();
+            var weekAgo = new Date(now.getTime() - 7 * 86400000);
+            var w = 0;
+            var comps = {};
+            for (var i = 0; i < allCards.length; i++) {
+                var c = allCards[i];
+                if (c.created_at) {
+                    var d = new Date(c.created_at);
+                    if (d >= weekAgo) w++;
+                }
+                if (c.company_name) {
+                    comps[c.company_name.toLowerCase().trim()] = true;
+                }
+            }
+            document.getElementById('weekCards').textContent = w;
+            document.getElementById('compCount').textContent = Object.keys(comps).length;
+        })();
+
+        // ─── Search ───
+        var searchTimer;
+        document.getElementById('searchInput').addEventListener('input', function (e) {
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(function () { doSearch(e.target.value); }, 300);
+        });
+
+        function doSearch(q) {
+            fetch('/search?q=' + encodeURIComponent(q))
+                .then(function (r) { return r.json(); })
+                .then(function (d) { renderGrid(d.cards); })
+                .catch(function () { });
+        }
+
+        function renderGrid(cards) {
+            var g = document.getElementById('grid');
+            if (!cards.length) {
+                g.innerHTML = '<div class="empty"><div class="empty-icon">🔍</div><h3>No results</h3><p>Try a different search</p></div>';
+                return;
+            }
+            var html = '';
+            for (var i = 0; i < cards.length; i++) {
+                var c = cards[i];
+                var init = c.person_name ? c.person_name[0].toUpperCase() : '?';
+                var phones = '';
+                if (Array.isArray(c.phone_numbers)) {
+                    phones = c.phone_numbers.join(', ');
+                } else if (c.phone_numbers) {
+                    phones = String(c.phone_numbers);
+                }
+                var sub = [c.designation, c.company_name].filter(Boolean).join(' • ') || '—';
+                var addr = c.office_address ? (c.office_address.length > 40 ? c.office_address.slice(0, 40) + '...' : c.office_address) : '';
+                var dt = c.created_at ? c.created_at.slice(0, 10) : '';
+
+                html += '<div class="grid-card" data-id="' + c.id + '" onclick="openModal(' + c.id + ')">' +
+                    '<div class="card-header">' +
+                    '<div class="avatar">' + init + '</div>' +
+                    '<div class="info"><h3>' + esc(c.person_name || 'Unknown') + '</h3><p>' + esc(sub) + '</p></div>' +
+                    '</div>' +
+                    '<div class="grid-body">' +
+                    (phones ? '<div class="grid-row"><span class="ico">📞</span><span class="val">' + esc(phones) + '</span></div>' : '') +
+                    (c.email ? '<div class="grid-row"><span class="ico">📧</span><span class="val">' + esc(c.email) + '</span></div>' : '') +
+                    (addr ? '<div class="grid-row"><span class="ico">📍</span><span class="val">' + esc(addr) + '</span></div>' : '') +
+                    '</div>' +
+                    '<div class="grid-foot">' +
+                    '<span class="grid-date">' + dt + '</span>' +
+                    '<div class="grid-btns">' +
+                    '<button class="btn btn-sm btn-secondary" onclick="event.stopPropagation(); openModal(' + c.id + ')">👁️</button>' +
+                    '<button class="btn btn-sm btn-whatsapp" style="flex:none;padding:6px 10px;font-size:12px;" onclick="event.stopPropagation(); quickWhatsApp(' + c.id + ')">💬</button>' +
+                    '<button class="btn btn-sm btn-danger" onclick="event.stopPropagation(); delCard(' + c.id + ')">🗑️</button>' +
+                    '</div>' +
+                    '</div>' +
+                    '</div>';
+            }
+            g.innerHTML = html;
+        }
+
+        // ─── Modal ───
+        function openModal(id) {
+            currentId = id;
+            fetch('/card/' + id)
+                .then(function (r) { return r.json(); })
+                .then(function (c) {
+                    if (c.error) { toast(c.error, 'error'); return; }
+
+                    document.getElementById('mAvatar').textContent = c.person_name ? c.person_name[0].toUpperCase() : '?';
+                    document.getElementById('mTitle').textContent = c.person_name || 'Card Details';
+                    document.getElementById('mSub').textContent = [c.designation, c.company_name].filter(Boolean).join(' • ') || '—';
+
+                    if (c.image_filename) {
+                        document.getElementById('mImgEl').src = '/card/' + id + '/image';
+                        document.getElementById('mImg').style.display = 'flex';
+                    } else {
+                        document.getElementById('mImg').style.display = 'none';
+                    }
+
+                    var fields = [
+                        { k: 'person_name', l: 'Name', i: '👤' },
+                        { k: 'company_name', l: 'Company', i: '🏢' },
+                        { k: 'designation', l: 'Title', i: '💼' },
+                        { k: 'phone_numbers', l: 'Phone', i: '📞', arr: true },
+                        { k: 'email', l: 'Email', i: '📧' },
+                        { k: 'website', l: 'Website', i: '🌐' },
+                        { k: 'office_address', l: 'Address', i: '📍' },
+                        { k: 'city', l: 'City', i: '🏙️' },
+                        { k: 'state', l: 'State', i: '🗺️' },
+                        { k: 'country', l: 'Country', i: '🌍' }
+                    ];
+
+                    var html = '';
+                    for (var j = 0; j < fields.length; j++) {
+                        var f = fields[j];
+                        var v = c[f.k] || '';
+                        if (f.arr && Array.isArray(v)) v = v.join(', ');
+                        if (typeof v === 'object') v = JSON.stringify(v);
+                        html += '<div class="field">' +
+                            '<div class="field-icon">' + f.i + '</div>' +
+                            '<div class="field-body">' +
+                            '<div class="field-label">' + f.l + '</div>' +
+                            '<input data-key="' + f.k + '"' + (f.arr ? ' data-arr="1"' : '') + ' value="' + esc(v) + '" placeholder="—">' +
+                            '</div>' +
+                            '</div>';
+                    }
+                    document.getElementById('mFields').innerHTML = html;
+                    document.getElementById('modalBg').classList.add('active');
+                })
+                .catch(function () { toast('Failed to load', 'error'); });
+        }
+
+        function closeModal() {
+            document.getElementById('modalBg').classList.remove('active');
+            currentId = null;
+        }
+
+        document.getElementById('modalBg').addEventListener('click', function (e) {
+            if (e.target === e.currentTarget) closeModal();
+        });
+        document.addEventListener('keydown', function (e) {
+            if (e.key === 'Escape') closeModal();
+        });
+
+        // ─── Save edited ───
+        function saveEdited() {
+            if (!currentId) return;
+            var payload = gatherModalFields();
+            fetch('/card/' + currentId, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (d.success) {
+                        toast('Updated! ✅', 'success');
+                        setTimeout(function () { location.reload(); }, 600);
+                    } else {
+                        toast(d.error || 'Failed', 'error');
+                    }
+                })
+                .catch(function () { toast('Update failed', 'error'); });
+        }
+
+        // ─── WhatsApp from Modal ───
+        function modalWhatsApp() {
+            var payload = gatherModalFields();
+            sendWhatsApp(payload);
+        }
+
+        // ─── Quick WhatsApp from grid ───
+        function quickWhatsApp(id) {
+            fetch('/card/' + id)
+                .then(function (r) { return r.json(); })
+                .then(function (c) {
+                    if (c.error) { toast('Card not found', 'error'); return; }
+                    sendWhatsApp(c);
+                })
+                .catch(function () { toast('Failed', 'error'); });
+        }
+
+        // ─── WhatsApp sender ───
+        // Only sends to +91 Indian mobile numbers
+        // WhatsApp format: 917044205279 (no + in wa.me URL)
+        function sendWhatsApp(data) {
+            var phones = data.phone_numbers;
+            if (typeof phones === 'string') phones = phones.split(',').map(function (p) { return p.trim(); }).filter(Boolean);
+            if (!Array.isArray(phones) || phones.length === 0) {
+                toast('No phone number found', 'error');
+                return;
+            }
+
+            // Find a +91 number (12 digits starting with 91)
+            var indiaPhone = null;
+            for (var i = 0; i < phones.length; i++) {
+                var d = phones[i].replace(/\D/g, '');
+                if (d.startsWith('91') && d.length === 12) {
+                    indiaPhone = d;
+                    break;
+                }
+            }
+
+            if (!indiaPhone) {
+                toast('No +91 mobile number found', 'error');
+                return;
+            }
+
+            var name = data.person_name || '';
+            var state = data.state || data.city || '';
+
+            var msg = 'Hi ' + name;
+            if (state) {
+                msg += ', we met in ' + state;
+            } else {
+                msg += ', we met recently';
+            }
+            msg += '. Nice knowing you, keep in touch.';
+
+            window.open('https://wa.me/' + indiaPhone + '?text=' + encodeURIComponent(msg));
+        }
+
+        // ─── Delete ───
+        function delCard(id) {
+            if (!confirm('Delete this card?')) return;
+            fetch('/card/' + id, { method: 'DELETE' })
+                .then(function (r) { return r.json(); })
+                .then(function (d) {
+                    if (d.success) {
+                        toast('Deleted', 'info');
+                        var el = document.querySelector('.grid-card[data-id="' + id + '"]');
+                        if (el) {
+                            el.style.opacity = '0';
+                            el.style.transform = 'scale(0.9)';
+                            el.style.transition = 'all 0.3s';
+                            setTimeout(function () { el.remove(); }, 300);
+                        }
+                        var tot = document.getElementById('totalCards');
+                        tot.textContent = Math.max(0, parseInt(tot.textContent) - 1);
+                    } else {
+                        toast(d.error || 'Failed', 'error');
+                    }
+                })
+                .catch(function () { toast('Delete failed', 'error'); });
+        }
+
+        // ─── Helpers ───
+        function gatherModalFields() {
+            var obj = {};
+            var inputs = document.querySelectorAll('#mFields input');
+            for (var i = 0; i < inputs.length; i++) {
+                var inp = inputs[i];
+                var v = inp.value.trim();
+                if (inp.getAttribute('data-arr')) {
+                    v = v.split(',').map(function (s) { return s.trim(); }).filter(Boolean);
+                }
+                obj[inp.getAttribute('data-key')] = v;
+            }
+            return obj;
+        }
+
+        function esc(s) {
+            if (!s) return '';
+            return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function toast(msg, type) {
+            type = type || 'info';
+            var t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast ' + type + ' show';
+            setTimeout(function () { t.classList.remove('show'); }, 3000);
+        }
+    </script>
+</body>
+
+</html>

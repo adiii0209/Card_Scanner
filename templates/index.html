@@ -1,0 +1,350 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>CardVault — Scan Card</title>
+    <meta name="description" content="Digitize business cards instantly with AI-powered OCR.">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+
+<body>
+
+    <!-- Navbar -->
+    <nav class="nav">
+        <a href="/" class="nav-brand">
+            <div class="nav-logo">⚡</div>
+            <div class="nav-title">Card<span>Vault</span></div>
+        </a>
+        <div class="nav-links">
+            <a href="/" class="nav-link active">📷 Scan</a>
+            <a href="/dashboard" class="nav-link">📋 Cards</a>
+        </div>
+    </nav>
+
+    <!-- Loading -->
+    <div class="loading" id="loader">
+        <div class="spinner"></div>
+        <div class="loading-text">Scanning with AI...</div>
+    </div>
+
+    <div class="page">
+
+        <!-- Hero + Upload -->
+        <section class="hero" id="heroSection">
+            <h1>Scan Your <span class="g">Business Card</span></h1>
+            <p>Upload or capture any visiting card — we'll extract all details instantly</p>
+
+            <div class="pills">
+                <span class="pill"><span class="pill-icon">🤖</span> AI Powered</span>
+                <span class="pill"><span class="pill-icon">📸</span> Any Format</span>
+                <span class="pill"><span class="pill-icon">⚡</span> Instant</span>
+            </div>
+
+            <div class="upload-wrap">
+                <div class="upload-area" id="uploadArea">
+                    <input type="file" id="fileInput" accept="image/*">
+                    <input type="file" id="cameraInput" accept="image/*" capture="environment">
+                    <div class="upload-icon">📇</div>
+                    <h3>Drop card here or tap below</h3>
+                    <p>JPG, PNG, BMP, WebP, TIFF — any orientation</p>
+                    <div class="upload-btns">
+                        <button type="button" class="upload-btn" id="galleryBtn">🖼️ Gallery</button>
+                        <button type="button" class="upload-btn" id="cameraBtn">📷 Camera</button>
+                    </div>
+                    <div class="file-info" id="fileInfo"></div>
+                </div>
+            </div>
+
+            <button class="btn btn-primary" id="scanBtn" disabled>🔍 Scan Card</button>
+        </section>
+
+        <!-- Result -->
+        <section class="result" id="resultSection">
+            <div class="result-head">
+                <h2>✅ Card Scanned</h2>
+                <p>Review, edit, then save or send via WhatsApp</p>
+            </div>
+
+            <div class="card">
+                <!-- Header -->
+                <div class="card-header">
+                    <div class="avatar" id="resAvatar">?</div>
+                    <div class="info">
+                        <h3 id="resName">—</h3>
+                        <p id="resSub">—</p>
+                    </div>
+                </div>
+
+                <!-- Card Image -->
+                <div class="card-img" id="cardImg">
+                    <img id="cardImgEl" src="" alt="Card">
+                </div>
+
+                <!-- Fields (compact) -->
+                <div class="fields" id="resFields"></div>
+
+                <!-- Action Buttons -->
+                <div class="card-actions">
+                    <button class="btn btn-save" id="saveBtn">💾 Save</button>
+                    <button class="btn btn-whatsapp" id="waBtn">💬 WhatsApp</button>
+                </div>
+            </div>
+
+            <button class="btn btn-secondary btn-full" id="rescanBtn" style="margin-top:12px;">🔄 Scan Another</button>
+        </section>
+
+    </div>
+
+    <!-- Toast -->
+    <div class="toast" id="toast"></div>
+
+    <script>
+        // ─── State ───
+        let cardData = null;
+
+        // ─── Elements ───
+        const uploadArea = document.getElementById('uploadArea');
+        const fileInput = document.getElementById('fileInput');
+        const cameraInput = document.getElementById('cameraInput');
+        const fileInfo = document.getElementById('fileInfo');
+        const scanBtn = document.getElementById('scanBtn');
+        const hero = document.getElementById('heroSection');
+        const result = document.getElementById('resultSection');
+        const loader = document.getElementById('loader');
+
+        // ─── Gallery / Camera buttons ───
+        document.getElementById('galleryBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            fileInput.click();
+        });
+
+        document.getElementById('cameraBtn').addEventListener('click', (e) => {
+            e.stopPropagation();
+            cameraInput.click();
+        });
+
+        // ─── Drag & Drop ───
+        uploadArea.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            uploadArea.classList.add('dragover');
+        });
+        uploadArea.addEventListener('dragleave', () => uploadArea.classList.remove('dragover'));
+        uploadArea.addEventListener('drop', (e) => {
+            e.preventDefault();
+            uploadArea.classList.remove('dragover');
+            if (e.dataTransfer.files.length) {
+                fileInput.files = e.dataTransfer.files;
+                onFileSelected(fileInput.files[0]);
+            }
+        });
+
+        // Click area to open gallery
+        uploadArea.addEventListener('click', (e) => {
+            if (e.target === uploadArea || e.target.classList.contains('upload-icon')
+                || e.target.tagName === 'H3' || e.target.tagName === 'P') {
+                fileInput.click();
+            }
+        });
+
+        fileInput.addEventListener('change', () => { if (fileInput.files.length) onFileSelected(fileInput.files[0]); });
+        cameraInput.addEventListener('change', () => {
+            if (cameraInput.files.length) onFileSelected(cameraInput.files[0]);
+        });
+
+        let selectedFile = null;
+
+        function onFileSelected(file) {
+            selectedFile = file;
+            fileInfo.textContent = '📎 ' + file.name + ' (' + (file.size / 1024).toFixed(0) + ' KB)';
+            fileInfo.style.display = 'block';
+            scanBtn.disabled = false;
+        }
+
+        // ─── Scan ───
+        scanBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+
+            loader.classList.add('active');
+            scanBtn.disabled = true;
+
+            const fd = new FormData();
+            fd.append('file', selectedFile);
+
+            try {
+                const res = await fetch('/scan', { method: 'POST', body: fd });
+                const data = await res.json();
+
+                loader.classList.remove('active');
+
+                if (data.error) {
+                    toast(data.error, 'error');
+                    scanBtn.disabled = false;
+                    return;
+                }
+
+                cardData = data;
+                showResult(data);
+            } catch (err) {
+                loader.classList.remove('active');
+                toast('Scan failed. Try again.', 'error');
+                scanBtn.disabled = false;
+            }
+        });
+
+        // ─── Show Result ───
+        function showResult(d) {
+            hero.style.display = 'none';
+            result.style.display = 'block';
+            window.scrollTo({ top: 0, behavior: 'smooth' });
+
+            // Header
+            const name = d.person_name || '?';
+            document.getElementById('resAvatar').textContent = name[0].toUpperCase();
+            document.getElementById('resName').textContent = name;
+            document.getElementById('resSub').textContent =
+                [d.designation, d.company_name].filter(Boolean).join(' • ') || '—';
+
+            // Image
+            if (d.image_data) {
+                document.getElementById('cardImgEl').src = d.image_data;
+                document.getElementById('cardImg').style.display = 'flex';
+            }
+
+            // Fields — compact essentials
+            const fields = [
+                { k: 'person_name', l: 'Name', i: '👤' },
+                { k: 'company_name', l: 'Company', i: '🏢' },
+                { k: 'designation', l: 'Title', i: '💼' },
+                { k: 'phone_numbers', l: 'Phone', i: '📞', arr: true },
+                { k: 'email', l: 'Email', i: '📧' },
+                { k: 'website', l: 'Website', i: '🌐' },
+                { k: 'office_address', l: 'Address', i: '📍' },
+                { k: 'city', l: 'City', i: '🏙️' },
+                { k: 'state', l: 'State', i: '🗺️' },
+                { k: 'country', l: 'Country', i: '🌍' },
+            ];
+
+            const container = document.getElementById('resFields');
+            container.innerHTML = '';
+
+            fields.forEach(f => {
+                let val = d[f.k] || '';
+                if (f.arr && Array.isArray(val)) val = val.join(', ');
+                if (typeof val === 'object') val = JSON.stringify(val);
+
+                const div = document.createElement('div');
+                div.className = 'field';
+                div.innerHTML =
+                    '<div class="field-icon">' + f.i + '</div>' +
+                    '<div class="field-body">' +
+                    '<div class="field-label">' + f.l + '</div>' +
+                    '<input data-key="' + f.k + '"' + (f.arr ? ' data-arr="1"' : '') +
+                    ' value="' + esc(val) + '" placeholder="—">' +
+                    '</div>';
+                container.appendChild(div);
+            });
+        }
+
+        // ─── Save ───
+        document.getElementById('saveBtn').addEventListener('click', async () => {
+            if (!cardData) return;
+
+            const payload = gatherFields();
+            payload.image_data = cardData.image_data || '';
+            payload.image_filename = cardData.image_filename || '';
+
+            try {
+                const res = await fetch('/save', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                const r = await res.json();
+                if (r.success) {
+                    toast('Saved to vault! 🎉', 'success');
+                    setTimeout(() => { window.location.href = '/dashboard'; }, 1000);
+                } else {
+                    toast(r.error || 'Save failed', 'error');
+                }
+            } catch (e) {
+                toast('Save failed', 'error');
+            }
+        });
+
+        // ─── WhatsApp ───
+        // Only works for +91 Indian mobile numbers
+        // Format: +917044205279 (no spaces, no dashes)
+        document.getElementById('waBtn').addEventListener('click', () => {
+            const payload = gatherFields();
+            let phones = payload.phone_numbers;
+            if (typeof phones === 'string') phones = phones.split(',').map(p => p.trim()).filter(Boolean);
+            if (!Array.isArray(phones)) phones = [];
+
+            // Find a +91 mobile number
+            const indiaPhone = phones.find(p => {
+                const d = p.replace(/\D/g, '');
+                return d.startsWith('91') && d.length === 12;
+            });
+
+            if (!indiaPhone) {
+                toast('No +91 mobile number found', 'error');
+                return;
+            }
+
+            // Format: +917044205279
+            const waNumber = '+' + indiaPhone.replace(/\D/g, '');
+
+            const name = payload.person_name || '';
+            const state = payload.state || payload.city || '';
+
+            let msg = 'Hi ' + name;
+            if (state) msg += ', we met in ' + state;
+            else msg += ', we met recently';
+            msg += '. Nice knowing you, keep in touch.';
+
+            window.open('https://wa.me/' + waNumber.replace('+', '') + '?text=' + encodeURIComponent(msg));
+        });
+
+        // ─── Rescan ───
+        document.getElementById('rescanBtn').addEventListener('click', () => {
+            cardData = null;
+            selectedFile = null;
+            fileInput.value = '';
+            cameraInput.value = '';
+            fileInfo.style.display = 'none';
+            scanBtn.disabled = true;
+            result.style.display = 'none';
+            hero.style.display = 'block';
+            document.getElementById('cardImg').style.display = 'none';
+        });
+
+        // ─── Helpers ───
+        function gatherFields() {
+            const obj = {};
+            document.querySelectorAll('#resFields input').forEach(inp => {
+                let v = inp.value.trim();
+                if (inp.dataset.arr) v = v.split(',').map(s => s.trim()).filter(Boolean);
+                obj[inp.dataset.key] = v;
+            });
+            return obj;
+        }
+
+        function esc(s) {
+            if (!s) return '';
+            return String(s).replace(/&/g, '&amp;').replace(/"/g, '&quot;')
+                .replace(/</g, '&lt;').replace(/>/g, '&gt;');
+        }
+
+        function toast(msg, type) {
+            type = type || 'info';
+            var t = document.getElementById('toast');
+            t.textContent = msg;
+            t.className = 'toast ' + type + ' show';
+            setTimeout(function () { t.classList.remove('show'); }, 3000);
+        }
+    </script>
+</body>
+
+</html>
