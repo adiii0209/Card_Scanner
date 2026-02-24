@@ -356,15 +356,8 @@
             }
 
             var name = data.person_name || '';
-            var state = data.state || data.city || '';
 
-            var msg = 'Hi ' + name;
-            if (state) {
-                msg += ', we met in ' + state;
-            } else {
-                msg += ', we met recently';
-            }
-            msg += '. Nice knowing you, keep in touch.';
+            var msg = 'Hi ' + name + ', it was a pleasure meeting you at SATTE. Great connecting with you \u2014 let\'s stay in touch!';
 
             window.open('https://wa.me/' + indiaPhone + '?text=' + encodeURIComponent(msg));
         }

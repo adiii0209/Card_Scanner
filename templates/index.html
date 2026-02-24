@@ -179,8 +179,15 @@
                 loader.classList.remove('active');
 
                 if (data.error) {
-                    toast(data.error, 'error');
+                    // Show a clear warning to rescan
+                    toast('⚠️ ' + data.error, 'error');
                     scanBtn.disabled = false;
+                    // If there's partial data (quality gate), still allow viewing it
+                    if (data.ocr_text && data.ocr_text.length > 10) {
+                        cardData = data;
+                        showResult(data);
+                        toast('⚠️ Low quality scan — verify details carefully', 'error');
+                    }
                     return;
                 }
 
@@ -188,7 +195,7 @@
                 showResult(data);
             } catch (err) {
                 loader.classList.remove('active');
-                toast('Scan failed. Try again.', 'error');
+                toast('⚠️ Scan failed. Please try again with a clearer photo.', 'error');
                 scanBtn.disabled = false;
             }
         });
@@ -297,12 +304,8 @@
             const waNumber = '+' + indiaPhone.replace(/\D/g, '');
 
             const name = payload.person_name || '';
-            const state = payload.state || payload.city || '';
 
-            let msg = 'Hi ' + name;
-            if (state) msg += ', we met in ' + state;
-            else msg += ', we met recently';
-            msg += '. Nice knowing you, keep in touch.';
+            let msg = 'Hi ' + name + ', it was a pleasure meeting you at SATTE. Great connecting with you — let\'s stay in touch!';
 
             window.open('https://wa.me/' + waNumber.replace('+', '') + '?text=' + encodeURIComponent(msg));
         });

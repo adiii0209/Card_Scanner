@@ -7,3 +7,5 @@ jinja2
 requests
 aiofiles
 python-dotenv
+opencv-python-headless
+numpy
