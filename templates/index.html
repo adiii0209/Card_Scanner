@@ -281,33 +281,33 @@
         });
 
         // ─── WhatsApp ───
-        // Only works for +91 Indian mobile numbers
-        // Format: +917044205279 (no spaces, no dashes)
+        // Works for any mobile number
         document.getElementById('waBtn').addEventListener('click', () => {
             const payload = gatherFields();
             let phones = payload.phone_numbers;
             if (typeof phones === 'string') phones = phones.split(',').map(p => p.trim()).filter(Boolean);
             if (!Array.isArray(phones)) phones = [];
 
-            // Find a +91 mobile number
-            const indiaPhone = phones.find(p => {
-                const d = p.replace(/\D/g, '');
-                return d.startsWith('91') && d.length === 12;
-            });
-
-            if (!indiaPhone) {
-                toast('No +91 mobile number found', 'error');
-                return;
+            // Find a valid mobile number
+            let targetPhone = null;
+            for (let i = 0; i < phones.length; i++) {
+                const d = phones[i].replace(/\D/g, '');
+                if (d.length >= 7) {
+                    targetPhone = d;
+                    break;
+                }
             }
 
-            // Format: +917044205279
-            const waNumber = '+' + indiaPhone.replace(/\D/g, '');
+            if (!targetPhone) {
+                toast('No valid mobile number found', 'error');
+                return;
+            }
 
             const name = payload.person_name || '';
 
             let msg = 'Hi ' + name + ', it was a pleasure meeting you at SATTE. Great connecting with you — let\'s stay in touch!';
 
-            window.open('https://wa.me/' + waNumber.replace('+', '') + '?text=' + encodeURIComponent(msg));
+            window.open('https://wa.me/' + targetPhone + '?text=' + encodeURIComponent(msg));
         });
 
         // ─── Rescan ───

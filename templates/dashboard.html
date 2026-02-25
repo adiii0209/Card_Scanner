@@ -7,6 +7,7 @@
     <title>Dashboard — CardVault</title>
     <meta name="description" content="View and manage your digitized business cards.">
     <link rel="stylesheet" href="/static/styles.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
 </head>
 
 <body>
@@ -31,7 +32,11 @@
                 <h1>Your Cards</h1>
                 <p>All digitized cards in one place</p>
             </div>
-            <a href="/" class="btn btn-primary" style="width:auto;padding:10px 18px;font-size:13px;">📷 Scan New</a>
+            <div style="display: flex; gap: 8px;">
+                <button class="btn btn-secondary" style="width:auto;padding:10px 18px;font-size:13px;"
+                    onclick="downloadAllPdf()">📁 Save PDF</button>
+                <a href="/" class="btn btn-primary" style="width:auto;padding:10px 18px;font-size:13px;">📷 Scan New</a>
+            </div>
         </div>
 
         <!-- Stats -->
@@ -330,8 +335,7 @@
         }
 
         // ─── WhatsApp sender ───
-        // Only sends to +91 Indian mobile numbers
-        // WhatsApp format: 917044205279 (no + in wa.me URL)
+        // Sends to any extracted phone number
         function sendWhatsApp(data) {
             var phones = data.phone_numbers;
             if (typeof phones === 'string') phones = phones.split(',').map(function (p) { return p.trim(); }).filter(Boolean);
@@ -340,18 +344,18 @@
                 return;
             }
 
-            // Find a +91 number (12 digits starting with 91)
-            var indiaPhone = null;
+            // Pick the first available number
+            var targetPhone = null;
             for (var i = 0; i < phones.length; i++) {
                 var d = phones[i].replace(/\D/g, '');
-                if (d.startsWith('91') && d.length === 12) {
-                    indiaPhone = d;
+                if (d.length >= 7) {
+                    targetPhone = d;
                     break;
                 }
             }
 
-            if (!indiaPhone) {
-                toast('No +91 mobile number found', 'error');
+            if (!targetPhone) {
+                toast('No valid mobile number found', 'error');
                 return;
             }
 
@@ -359,7 +363,7 @@
 
             var msg = 'Hi ' + name + ', it was a pleasure meeting you at SATTE. Great connecting with you \u2014 let\'s stay in touch!';
 
-            window.open('https://wa.me/' + indiaPhone + '?text=' + encodeURIComponent(msg));
+            window.open('https://wa.me/' + targetPhone + '?text=' + encodeURIComponent(msg));
         }
 
         // ─── Delete ───
@@ -379,11 +383,127 @@
                         }
                         var tot = document.getElementById('totalCards');
                         tot.textContent = Math.max(0, parseInt(tot.textContent) - 1);
+
+                        // Also remove from allCards array
+                        allCards = allCards.filter(function (c) { return c.id !== id; });
                     } else {
                         toast(d.error || 'Failed', 'error');
                     }
                 })
                 .catch(function () { toast('Delete failed', 'error'); });
+        }
+
+        // ─── Generate PDF ───
+        function downloadAllPdf() {
+            if (!allCards || allCards.length === 0) {
+                toast('No cards available to save', 'error');
+                return;
+            }
+
+            toast('Generating PDF...', 'info');
+
+            // Build hidden container
+            var container = document.createElement('div');
+            container.style.padding = '20px';
+            container.style.background = '#f9f9f9';
+            container.style.color = '#000';
+            container.style.width = '800px';
+
+            var title = document.createElement('h1');
+            title.textContent = 'Digital Visiting Cards';
+            title.style.textAlign = 'center';
+            title.style.marginBottom = '30px';
+            title.style.fontFamily = 'sans-serif';
+            container.appendChild(title);
+
+            var grid = document.createElement('div');
+            grid.style.display = 'flex';
+            grid.style.flexWrap = 'wrap';
+            grid.style.gap = '20px';
+            grid.style.justifyContent = 'center';
+
+            for (var i = 0; i < allCards.length; i++) {
+                var c = allCards[i];
+                var cardDiv = document.createElement('div');
+                cardDiv.style.width = '350px';
+                cardDiv.style.border = '1px solid #ddd';
+                cardDiv.style.borderRadius = '12px';
+                cardDiv.style.padding = '20px';
+                cardDiv.style.boxSizing = 'border-box';
+                cardDiv.style.pageBreakInside = 'avoid';
+                cardDiv.style.fontFamily = 'sans-serif';
+                cardDiv.style.marginBottom = '20px';
+                cardDiv.style.background = '#fff';
+                cardDiv.style.boxShadow = '0 4px 6px rgba(0,0,0,0.05)';
+
+                var innerHtml = '';
+
+                // Add Image if available
+                if (c.image_filename) {
+                    var imgUrl = window.location.origin + '/card/' + c.id + '/image';
+                    innerHtml += '<div style="text-align:center;margin-bottom:15px;height:180px;display:flex;align-items:center;justify-content:center;background:#fafafa;border-radius:8px;">';
+                    innerHtml += '<img src="' + imgUrl + '" style="max-width:100%;max-height:160px;object-fit:contain;" crossorigin="anonymous" />';
+                    innerHtml += '</div>';
+                } else {
+                    innerHtml += '<div style="text-align:center;margin-bottom:15px;height:180px;display:flex;align-items:center;justify-content:center;background:#fafafa;border-radius:8px;border:1px dashed #ccc;">';
+                    innerHtml += '<span style="color:#aaa;font-size:14px;">No Photo Saved</span>';
+                    innerHtml += '</div>';
+                }
+
+                var name = c.person_name || 'Unknown';
+                var company = [c.designation, c.company_name].filter(Boolean).join(' • ') || '—';
+
+                innerHtml += '<h3 style="margin:0 0 5px 0;font-size:18px;color:#333;">' + esc(name) + '</h3>';
+                innerHtml += '<p style="margin:0 0 15px 0;font-size:14px;color:#666;">' + esc(company) + '</p>';
+
+                // Details
+                var details = [];
+                var phones = '';
+                if (Array.isArray(c.phone_numbers)) phones = c.phone_numbers.join(', ');
+                else if (c.phone_numbers) phones = String(c.phone_numbers);
+
+                if (phones) details.push({ i: '📞', v: phones });
+                if (c.email) details.push({ i: '📧', v: c.email });
+                if (c.website) details.push({ i: '🌐', v: c.website });
+                if (c.office_address) details.push({ i: '📍', v: c.office_address });
+
+                for (var d = 0; d < details.length; d++) {
+                    innerHtml += '<div style="display:flex;margin-bottom:10px;font-size:13px;color:#444;">';
+                    innerHtml += '<span style="margin-right:10px;font-size:16px;">' + details[d].i + '</span>';
+                    innerHtml += '<span style="flex:1;word-wrap:break-word;line-height:1.4;">' + esc(details[d].v) + '</span>';
+                    innerHtml += '</div>';
+                }
+
+                cardDiv.innerHTML = innerHtml;
+                grid.appendChild(cardDiv);
+            }
+
+            container.appendChild(grid);
+
+            var wrapper = document.createElement('div');
+            wrapper.style.position = 'absolute';
+            wrapper.style.left = '-9999px';
+            wrapper.appendChild(container);
+            document.body.appendChild(wrapper);
+
+            setTimeout(function () {
+                var opt = {
+                    margin: 10,
+                    filename: 'Visiting_Cards.pdf',
+                    image: { type: 'jpeg', quality: 0.98 },
+                    html2canvas: { scale: 2, useCORS: true },
+                    jsPDF: { unit: 'mm', format: 'a4', orientation: 'portrait' }
+                };
+
+                html2pdf().set(opt).from(container).save().then(function () {
+                    document.body.removeChild(wrapper);
+                    toast('PDF Saved! ✅', 'success');
+                }).catch(function (err) {
+                    document.body.removeChild(wrapper);
+                    toast('Error generating PDF', 'error');
+                    console.error(err);
+                });
+            }, 800); // give enough time for images to buffer locally
         }
 
         // ─── Helpers ───
